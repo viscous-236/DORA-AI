@@ -73,7 +73,7 @@ interface ProposalContent {
 }
 
 const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -417,7 +417,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
   };
 
   return (
-    <div className="dao-copilot-panel">
+    <div className={`dao-copilot-panel${!isExpanded ? ' minimized' : ''}`}>
       <div className="dao-copilot-header" onClick={() => setIsExpanded(!isExpanded)}>
         <div className="dao-copilot-title">
           <span className="dao-copilot-icon">🤖</span>
@@ -442,7 +442,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
                 width: '100%',
                 padding: '10px',
                 marginBottom: '12px',
-                background: '#3b82f6',
+                background: '#000000',
                 color: 'white',
                 border: 'none',
                 borderRadius: '6px',
@@ -457,8 +457,9 @@ const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
             <>
               <div style={{
                 padding: '8px 12px',
-                background: '#10b981',
+                background: '#000000',
                 color: 'white',
+                border: '1px solid #ffffff',
                 borderRadius: '6px',
                 fontSize: '12px',
                 marginBottom: '12px',
