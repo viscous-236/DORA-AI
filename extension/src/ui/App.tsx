@@ -10,13 +10,57 @@ interface AppProps {
   daoId: string;
 }
 
+interface EvidencedPoint {
+  text: string;
+  evidence: string;
+  severity?: 'High' | 'Medium' | 'Low';
+}
+
+interface ReasoningStep {
+  step: number;
+  category: 'governance' | 'treasury' | 'kpi' | 'risk' | 'similarity';
+  finding: string;
+  impact: 'positive' | 'negative' | 'neutral';
+}
+
+interface BudgetItem {
+  category: string;
+  amount: string;
+  justification?: string;
+}
+
+interface BudgetJustification {
+  breakdown: BudgetItem[];
+  totalAmount: string;
+  flags: string[];
+}
+
+interface DelegateReaction {
+  delegateType: string;
+  expectedVote: 'YES' | 'NO' | 'ABSTAIN';
+  reasoning: string;
+}
+
 interface AnalysisResult {
   summary: string;
-  benefits: string[];
-  risks: string[];
+  benefits: EvidencedPoint[];
+  risks: EvidencedPoint[];
   recommendation: "YES" | "NO" | "ABSTAIN";
   confidence: number;
   reasoning: string;
+  similarProposals?: string[];
+  missingFields?: string[];
+  requiredClarifications?: string[];
+  confidenceBreakdown?: {
+    rulesCoverage: number;
+    retrievalSupport: number;
+    baseConfidence: number;
+  };
+  reasoningChain?: ReasoningStep[];
+  conditionalPath?: string;
+  budgetJustification?: BudgetJustification;
+  delegateReactions?: DelegateReaction[];
+  probabilityOfPassing?: number;
 }
 
 interface ProposalContent {
@@ -190,6 +234,8 @@ const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
         title: proposalContent.title,
       });
 
+      console.log("Extracted content text preview:", proposalContent.text);
+
       const requestBody = JSON.stringify({
         daoId,
         proposalId,
@@ -206,9 +252,50 @@ const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
       console.log("[DAO Co-Pilot] Viem wallet client created");
       
       const fetchWithPayment = wrapFetchWithPayment(
-        fetch,
-        walletClient as any, // Pass wallet client directly - x402-fetch should handle it
-        BigInt(60000) // 60 second timeout
+        // Use background fetch to bypass ad blockers
+        async (url: string | URL | Request, init?: RequestInit) => {
+          console.log("[DAO Co-Pilot] Using background fetch to bypass ad blockers");
+          return new Promise<Response>((resolve, reject) => {
+            const urlString = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+            
+            chrome.runtime.sendMessage(
+              {
+                type: 'BACKGROUND_FETCH',
+                data: {
+                  url: urlString,
+                  method: init?.method || 'GET',
+                  headers: init?.headers || {},
+                  body: init?.body
+                }
+              },
+              (response) => {
+                if (chrome.runtime.lastError) {
+                  reject(new Error(chrome.runtime.lastError.message));
+                  return;
+                }
+                
+                if (response.error) {
+                  reject(new Error(response.error));
+                  return;
+                }
+                
+                // Create a Response object from the background fetch result
+                const responseObj = new Response(
+                  JSON.stringify(response.data),
+                  {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: new Headers(response.headers)
+                  }
+                );
+                
+                resolve(responseObj);
+              }
+            );
+          });
+        },
+        walletClient as any,
+        BigInt(60000)
       );
 
       console.log("[DAO Co-Pilot] Making X402-enabled request...");
@@ -417,6 +504,13 @@ const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
                 </div>
                 <div className="dao-copilot-confidence">
                   Confidence: {analysis.confidence}%
+                  {analysis.confidenceBreakdown && (
+                    <div style={{ fontSize: '11px', marginTop: '4px', color: '#6b7280' }}>
+                      Rules: {analysis.confidenceBreakdown.rulesCoverage}% | 
+                      Retrieval: {analysis.confidenceBreakdown.retrievalSupport}% | 
+                      Base: {analysis.confidenceBreakdown.baseConfidence}%
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -429,19 +523,203 @@ const App: React.FC<AppProps> = ({ proposalId, daoId }) => {
                 <h4>✅ Benefits</h4>
                 <ul>
                   {analysis.benefits.map((benefit, idx) => (
-                    <li key={idx}>{benefit}</li>
+                    <li key={idx}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <strong>{benefit.text}</strong>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', marginLeft: '12px' }}>
+                        📝 "{benefit.evidence}"
+                      </div>
+                    </li>
                   ))}
                 </ul>
               </div>
 
+              {analysis.missingFields && analysis.missingFields.length > 0 && (
+                <div className="dao-copilot-section" style={{ background: '#fee2e2', borderLeft: '4px solid #ef4444', padding: '12px' }}>
+                  <h4 style={{ color: '#991b1b', margin: '0 0 8px 0' }}>🔴 Missing Governance Fields</h4>
+                  <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                    {analysis.missingFields.map((field, idx) => (
+                      <li key={idx} style={{ color: '#991b1b', fontSize: '13px' }}>{field}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="dao-copilot-section">
                 <h4>⚠️ Risks</h4>
                 <ul>
-                  {analysis.risks.map((risk, idx) => (
-                    <li key={idx}>{risk}</li>
-                  ))}
+                  {analysis.risks.map((risk, idx) => {
+                    const severityColor = 
+                      risk.severity === 'High' ? '#ef4444' :
+                      risk.severity === 'Medium' ? '#f59e0b' :
+                      '#10b981';
+                    const severityBg = 
+                      risk.severity === 'High' ? '#fee2e2' :
+                      risk.severity === 'Medium' ? '#fef3c7' :
+                      '#d1fae5';
+                    return (
+                      <li key={idx}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          {risk.severity && (
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 'bold',
+                              color: severityColor,
+                              background: severityBg,
+                              border: `1px solid ${severityColor}`
+                            }}>
+                              {risk.severity.toUpperCase()}
+                            </span>
+                          )}
+                          <strong>{risk.text}</strong>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', marginLeft: '12px' }}>
+                          📝 "{risk.evidence}"
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
+
+              {analysis.requiredClarifications && analysis.requiredClarifications.length > 0 && (
+                <div className="dao-copilot-section" style={{ background: '#fef3c7', borderLeft: '4px solid #f59e0b' }}>
+                  <h4 style={{ color: '#92400e' }}>📝 Required Clarifications</h4>
+                  <ol style={{ margin: 0, paddingLeft: '20px' }}>
+                    {analysis.requiredClarifications.map((q, idx) => (
+                      <li key={idx} style={{ color: '#92400e', fontSize: '13px', marginBottom: '8px' }}>{q}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              {analysis.reasoningChain && analysis.reasoningChain.length > 0 && (
+                <div className="dao-copilot-section">
+                  <details>
+                    <summary style={{ cursor: 'pointer', fontWeight: 'bold', marginBottom: '8px' }}>
+                      🧠 Reasoning Chain ({analysis.reasoningChain.length} steps)
+                    </summary>
+                    <ol style={{ paddingLeft: '20px' }}>
+                      {analysis.reasoningChain.map((step) => {
+                        const impactColor = 
+                          step.impact === 'positive' ? '#10b981' :
+                          step.impact === 'negative' ? '#ef4444' :
+                          '#6b7280';
+                        const icon = 
+                          step.impact === 'positive' ? '✅' :
+                          step.impact === 'negative' ? '⚠️' : 'ℹ️';
+                        return (
+                          <li key={step.step} style={{
+                            marginBottom: '8px',
+                            paddingLeft: '8px',
+                            borderLeft: `3px solid ${impactColor}`,
+                            fontSize: '13px'
+                          }}>
+                            <strong style={{ textTransform: 'uppercase', fontSize: '11px', color: '#6b7280' }}>
+                              [{step.category}]
+                            </strong> {icon} {step.finding}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </details>
+                </div>
+              )}
+
+              {analysis.conditionalPath && (
+                <div className="dao-copilot-section" style={{ background: '#dbeafe', borderLeft: '4px solid #3b82f6' }}>
+                  <h4 style={{ color: '#1e40af', margin: '0 0 8px 0' }}>🔄 Conditional Path</h4>
+                  <p style={{ color: '#1e40af', fontSize: '13px', margin: 0 }}>{analysis.conditionalPath}</p>
+                </div>
+              )}
+
+              {analysis.budgetJustification && (
+                <div className="dao-copilot-section" style={{ background: '#fef3c7', borderLeft: '4px solid #f59e0b' }}>
+                  <h4 style={{ color: '#92400e', margin: '0 0 8px 0' }}>💰 Budget Justification</h4>
+                  <div style={{ marginBottom: '8px' }}>
+                    <strong style={{ color: '#92400e' }}>Total: {analysis.budgetJustification.totalAmount}</strong>
+                  </div>
+                  {analysis.budgetJustification.breakdown.length > 0 && (
+                    <ul style={{ margin: '8px 0', paddingLeft: '20px', fontSize: '13px' }}>
+                      {analysis.budgetJustification.breakdown.map((item, idx) => (
+                        <li key={idx} style={{ color: '#92400e', marginBottom: '4px' }}>
+                          <strong>{item.category}:</strong> {item.amount}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {analysis.budgetJustification.flags.length > 0 && (
+                    <div style={{ marginTop: '8px', padding: '8px', background: '#fee2e2', borderRadius: '4px' }}>
+                      {analysis.budgetJustification.flags.map((flag, idx) => (
+                        <div key={idx} style={{ color: '#991b1b', fontSize: '12px', fontWeight: 'bold' }}>
+                          🚩 {flag}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {analysis.delegateReactions && analysis.delegateReactions.length > 0 && (
+                <div className="dao-copilot-section">
+                  <h4>🗳️ Expected Delegate Reactions</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {analysis.delegateReactions.map((reaction, idx) => {
+                      const voteColor = 
+                        reaction.expectedVote === 'YES' ? '#10b981' :
+                        reaction.expectedVote === 'NO' ? '#ef4444' : '#f59e0b';
+                      return (
+                        <div key={idx} style={{ 
+                          padding: '10px', 
+                          background: '#f9fafb', 
+                          borderRadius: '6px',
+                          borderLeft: `4px solid ${voteColor}`
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <strong style={{ fontSize: '13px' }}>{reaction.delegateType}</strong>
+                            <span style={{ 
+                              padding: '2px 8px', 
+                              borderRadius: '4px', 
+                              fontSize: '11px', 
+                              fontWeight: 'bold',
+                              color: 'white',
+                              background: voteColor
+                            }}>
+                              {reaction.expectedVote}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>
+                            {reaction.reasoning}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {analysis.probabilityOfPassing !== undefined && (
+                <div className="dao-copilot-section" style={{ 
+                  background: analysis.probabilityOfPassing >= 60 ? '#d1fae5' : analysis.probabilityOfPassing >= 40 ? '#fef3c7' : '#fee2e2',
+                  borderLeft: `4px solid ${analysis.probabilityOfPassing >= 60 ? '#10b981' : analysis.probabilityOfPassing >= 40 ? '#f59e0b' : '#ef4444'}`,
+                  textAlign: 'center'
+                }}>
+                  <h4 style={{ margin: '0 0 8px 0' }}>📊 Estimated Probability of Passing</h4>
+                  <div style={{ 
+                    fontSize: '32px', 
+                    fontWeight: 'bold',
+                    color: analysis.probabilityOfPassing >= 60 ? '#059669' : analysis.probabilityOfPassing >= 40 ? '#d97706' : '#dc2626'
+                  }}>
+                    {analysis.probabilityOfPassing}%
+                  </div>
+                  <p style={{ fontSize: '11px', color: '#6b7280', margin: '8px 0 0 0' }}>
+                    Based on: historical success, budget size, delegate alignment, governance completeness
+                  </p>
+                </div>
+              )}
 
               <div className="dao-copilot-section">
                 <h4>💡 AI Reasoning</h4>

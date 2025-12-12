@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "ts-node-dev src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "ingest-local": "npx ts-node src/rag/ingest/ingest-local.ts"
   },
   "dependencies": {
     "axios": "^1.7.0",

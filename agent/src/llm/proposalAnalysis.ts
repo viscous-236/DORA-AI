@@ -1,69 +1,712 @@
-import { ProposalAnalysis } from "../types/Proposal";
+import { ProposalAnalysis, EvidencedPoint, GovernanceCheckItem, ReasoningStep, BudgetItem, BudgetJustification, DelegateReaction } from "../types/Proposal";
+import { searchLocal, summarizeLocal, isLocalRAGAvailable } from '../rag/local-client';
 
+/**
+ * Governance checklist - essential fields for DAO proposals
+ */
+interface GovernanceChecklist {
+  hasEscrow: boolean;
+  hasVerification: boolean;
+  hasKPITiming: boolean;
+  hasAudit: boolean;
+  hasBudget: boolean;
+  hasTimeline: boolean;
+}
 
+/**
+ * UPGRADE 1: Advanced pattern detection for risk classification
+ */
+const RISK_PATTERNS = {
+  treasury: {
+    keywords: ['budget', 'million', 'incentive', 'unlock', 'funding', 'treasury', 'disburse', 'grant', 'allocate', 'payment'],
+    regex: /\$\s*\d+\.?\d*\s*([MmKk]|million|thousand)/,
+    severity: 'High' as const
+  },
+  counterparty: {
+    keywords: ['Sky', 'Spark', 'external', 'partner', 'third-party', 'vendor', 'service provider', 'contractor'],
+    regex: /\b(partner|vendor|contractor|third-party)\b/i,
+    severity: 'Medium' as const
+  },
+  custody: {
+    keywords: ['custody', 'escrow', 'timelock', 'UAC', 'disbursement', 'multisig', 'wallet', 'control'],
+    regex: /\b(escrow|timelock|multisig|custody)\b/i,
+    severity: 'High' as const
+  },
+  verification: {
+    keywords: ['verify', 'audit', 'proof', 'oracle', 'measurement', 'validation', 'attestation'],
+    regex: /\b(audit|verify|oracle|proof)\b/i,
+    severity: 'Medium' as const
+  },
+  technical: {
+    keywords: ['upgrade', 'contract', 'deploy', 'implementation', 'protocol change', 'smart contract'],
+    regex: /\b(upgrade|deploy|contract)\b/i,
+    severity: 'Medium' as const
+  },
+  operational: {
+    keywords: ['manage', 'operate', 'maintain', 'coordinate', 'oversee'],
+    regex: /\b(manage|operate|maintain)\b/i,
+    severity: 'Low' as const
+  }
+};
+
+/**
+ * Extract amount from treasury-related text
+ */
+function extractTreasuryAmount(text: string): string | null {
+  const match = text.match(/\$\s*(\d+\.?\d*)\s*([MmKk]|million|thousand)/);
+  if (match) {
+    return `$${match[1]}${match[2].toUpperCase().charAt(0)}`;
+  }
+  return null;
+}
+
+/**
+ * Detect risk patterns with improved accuracy
+ */
+function detectRiskPattern(proposalText: string, patternType: keyof typeof RISK_PATTERNS): boolean {
+  const pattern = RISK_PATTERNS[patternType];
+  const textLower = proposalText.toLowerCase();
+  
+  if (pattern.regex && pattern.regex.test(proposalText)) {
+    return true;
+  }
+  
+  return pattern.keywords.some(keyword => textLower.includes(keyword.toLowerCase()));
+}
+
+/**
+ * Get severity for a risk type
+ */
+function getRiskSeverity(riskType: keyof typeof RISK_PATTERNS): 'High' | 'Medium' | 'Low' {
+  return RISK_PATTERNS[riskType].severity;
+}
+
+/**
+ * Extract evidence sentences from proposal text for a given keyword/pattern
+ */
+function extractEvidence(proposalText: string, keywords: string[]): string {
+  const sentences = proposalText.split(/[.!?]\s+/);
+  
+  for (const sentence of sentences) {
+    const lowerSentence = sentence.toLowerCase();
+    if (keywords.some(keyword => lowerSentence.includes(keyword.toLowerCase()))) {
+      return sentence.trim().substring(0, 150) + (sentence.length > 150 ? '...' : '');
+    }
+  }
+  
+  return proposalText.substring(0, 100) + '...';
+}
+
+/**
+ * Run governance checklist on proposal text
+ */
+function runGovernanceChecklist(proposalText: string): GovernanceChecklist {
+  const textLower = proposalText.toLowerCase();
+  
+  return {
+    hasEscrow: textLower.includes('escrow') || textLower.includes('timelock') || textLower.includes('multisig'),
+    hasVerification: textLower.includes('on-chain proof') || textLower.includes('verify') || textLower.includes('oracle'),
+    hasKPITiming: textLower.includes('quarter') || textLower.includes('monthly') || textLower.includes('30-day') || /\d+\s*months?/.test(textLower),
+    hasAudit: textLower.includes('audit') || textLower.includes('security review'),
+    hasBudget: /\$\d+/.test(proposalText) || textLower.includes('budget'),
+    hasTimeline: textLower.includes('timeline') || textLower.includes('schedule') || textLower.includes('phases')
+  };
+}
+
+/**
+ * Generate clarifying questions based on missing checklist items
+ */
+function generateClarifications(checklist: GovernanceChecklist): string[] {
+  const clarifications: string[] = [];
+  
+  if (!checklist.hasEscrow) {
+    clarifications.push('Where will funds be held? Recommend using an escrow contract or timelocked multisig controlled by the DAO.');
+  }
+  
+  if (!checklist.hasVerification) {
+    clarifications.push('How will KPIs be verified on-chain? Specify the proof format and independent verifier (oracle, Chainlink, or auditor multisig).');
+  }
+  
+  if (!checklist.hasKPITiming) {
+    clarifications.push('What are the exact measurement windows and data sources for KPIs? Define when and how metrics will be sampled.');
+  }
+  
+  if (!checklist.hasAudit) {
+    clarifications.push('Have external contracts/partners been audited? Provide audit reports or attestations for third-party components.');
+  }
+  
+  if (checklist.hasBudget && !checklist.hasTimeline) {
+    clarifications.push('What is the spending timeline and reporting cadence? Include milestones and how the DAO can pause/discontinue if needed.');
+  }
+  
+  return clarifications;
+}
+
+/**
+ * Calculate composite confidence score
+ */
+function calculateConfidence(
+  checklist: GovernanceChecklist,
+  avgSimilarity: number,
+  baseConfidence: number
+): { score: number; breakdown: any } {
+  const checklistValues = Object.values(checklist);
+  const rulesCoverage = checklistValues.filter(v => v).length / checklistValues.length;
+  
+  const retrievalSupport = avgSimilarity;
+  
+  const score = Math.round(
+    50 * rulesCoverage +
+    30 * retrievalSupport +
+    20 * (baseConfidence / 100)
+  );
+  
+  return {
+    score: Math.min(95, Math.max(30, score)),
+    breakdown: {
+      rulesCoverage: Math.round(rulesCoverage * 100),
+      retrievalSupport: Math.round(retrievalSupport * 100),
+      baseConfidence: Math.round(baseConfidence)
+    }
+  };
+}
+
+/**
+ * UPGRADE 3: Build transparent reasoning chain
+ */
+function buildReasoningChain(
+  checklist: GovernanceChecklist,
+  risks: EvidencedPoint[],
+  benefits: EvidencedPoint[],
+  treasuryAmount: string | null,
+  similarCount: number
+): ReasoningStep[] {
+  const chain: ReasoningStep[] = [];
+  let stepNum = 1;
+  
+  const missingCount = Object.values(checklist).filter(v => !v).length;
+  if (missingCount > 0) {
+    chain.push({
+      step: stepNum++,
+      category: 'governance',
+      finding: `Governance check ${missingCount === 0 ? 'passed' : 'failed'} → Missing ${missingCount} of 6 required fields`,
+      impact: missingCount > 2 ? 'negative' : missingCount > 0 ? 'neutral' : 'positive'
+    });
+  }
+  
+  const highRisks = risks.filter(r => r.severity === 'High');
+  if (highRisks.length > 0 && treasuryAmount) {
+    chain.push({
+      step: stepNum++,
+      category: 'treasury',
+      finding: `High treasury impact → ${treasuryAmount} ${highRisks.length > 1 ? 'with multiple risk factors' : 'requested'}`,
+      impact: 'negative'
+    });
+  }
+  
+  const hasStrongKPIs = benefits.some(b => b.text.toLowerCase().includes('measurable') || b.text.toLowerCase().includes('performance'));
+  if (hasStrongKPIs) {
+    chain.push({
+      step: stepNum++,
+      category: 'kpi',
+      finding: 'Strong KPIs → measurable, performance-based metrics defined',
+      impact: 'positive'
+    });
+  }
+  
+  const mediumRisks = risks.filter(r => r.severity === 'Medium');
+  if (highRisks.length > 0 || mediumRisks.length > 1) {
+    chain.push({
+      step: stepNum++,
+      category: 'risk',
+      finding: `Risk factors: ${highRisks.length} High, ${mediumRisks.length} Medium → ${highRisks.map(r => r.text.split(':')[0]).join(', ')}`,
+      impact: 'negative'
+    });
+  }
+  
+  if (similarCount > 0) {
+    chain.push({
+      step: stepNum++,
+      category: 'similarity',
+      finding: `Historical precedent → ${similarCount} similar proposal${similarCount > 1 ? 's' : ''} found in governance history`,
+      impact: 'positive'
+    });
+  }
+  
+  return chain;
+}
+
+/**
+ * UPGRADE 5: Formalized conditional logic for recommendations
+ */
+function determineRecommendation(
+  checklist: GovernanceChecklist,
+  risks: EvidencedPoint[],
+  benefits: EvidencedPoint[],
+  passedSimilar: number,
+  failedSimilar: number
+): { recommendation: 'YES' | 'NO' | 'ABSTAIN'; conditionalPath: string } {
+  const missingCritical = !checklist.hasEscrow || !checklist.hasVerification;
+  const highRisks = risks.filter(r => r.severity === 'High').length;
+  const hasBudget = checklist.hasBudget;
+  
+  if (missingCritical && hasBudget && highRisks >= 2) {
+    return {
+      recommendation: 'NO',
+      conditionalPath: 'Would change to ABSTAIN if: escrow mechanism + verification process specified'
+    };
+  }
+  
+  if (missingCritical || Object.values(checklist).filter(v => !v).length >= 2) {
+    return {
+      recommendation: 'ABSTAIN',
+      conditionalPath: 'Would change to YES if: all governance fields addressed (escrow, verification, timeline)'
+    };
+  }
+  
+  if (passedSimilar >= 2 && Object.values(checklist).filter(v => !v).length <= 1) {
+    return {
+      recommendation: 'YES',
+      conditionalPath: benefits.length >= 3 ? 'Strong approval - all governance safeguards present' : 'Approval with monitoring recommended'
+    };
+  }
+  
+  if (benefits.length > risks.length && Object.values(checklist).filter(v => !v).length <= 1) {
+    return {
+      recommendation: 'YES',
+      conditionalPath: 'Approval - benefits outweigh risks with adequate safeguards'
+    };
+  }
+  
+  return {
+    recommendation: 'ABSTAIN',
+    conditionalPath: 'Would change to YES if: proposer clarifies missing fields and addresses top 2 risks'
+  };
+}
+
+/**
+ * Extract budget breakdown from proposal text
+ */
+function extractBudgetJustification(proposalText: string, treasuryAmount: string | null): BudgetJustification | undefined {
+  if (!treasuryAmount) return undefined;
+  
+  const breakdown: BudgetItem[] = [];
+  const flags: string[] = [];
+  const lines = proposalText.split('\n');
+  
+  // Common budget patterns
+  const budgetKeywords = ['backend', 'frontend', 'infrastructure', 'ops', 'maintenance', 'development', 'design', 'audit', 'security', 'marketing', 'operations'];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].toLowerCase();
+    
+    // Look for budget line items
+    const amountMatch = line.match(/[\$€£]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*([kmb]|thousand|million|billion)?/i);
+    if (amountMatch) {
+      const keyword = budgetKeywords.find(kw => line.includes(kw));
+      if (keyword) {
+        const amount = amountMatch[0];
+        const category = line.split(':')[0].trim() || keyword.charAt(0).toUpperCase() + keyword.slice(1);
+        breakdown.push({
+          category: category.length > 50 ? keyword.charAt(0).toUpperCase() + keyword.slice(1) : category,
+          amount: amount
+        });
+      }
+    }
+  }
+  
+  // Check for benchmarking
+  const hasBenchmark = proposalText.toLowerCase().includes('similar') && 
+                      proposalText.toLowerCase().includes('grant') ||
+                      proposalText.toLowerCase().includes('benchmark') ||
+                      proposalText.toLowerCase().includes('comparable');
+  
+  if (!hasBenchmark) {
+    flags.push('No benchmark against similar infra grants');
+  }
+  
+  // If no breakdown found, create a generic one
+  if (breakdown.length === 0) {
+    breakdown.push({
+      category: 'Total requested',
+      amount: treasuryAmount
+    });
+  }
+  
+  return {
+    breakdown,
+    totalAmount: treasuryAmount,
+    flags
+  };
+}
+
+/**
+ * Generate delegate reaction predictions
+ */
+function generateDelegateReactions(
+  recommendation: 'YES' | 'NO' | 'ABSTAIN',
+  risks: EvidencedPoint[],
+  checklist: GovernanceChecklist,
+  treasuryAmount: string | null
+): DelegateReaction[] {
+  const reactions: DelegateReaction[] = [];
+  
+  const highRisks = risks.filter(r => r.severity === 'High').length;
+  const missingFields = Object.values(checklist).filter(v => !v).length;
+  
+  // Risk-averse delegates
+  if (highRisks >= 2 || missingFields >= 3) {
+    reactions.push({
+      delegateType: 'Risk-averse delegates',
+      expectedVote: 'NO',
+      reasoning: `${highRisks} High-severity risks and ${missingFields} missing governance safeguards exceed risk tolerance`
+    });
+  } else if (highRisks >= 1 || missingFields >= 2) {
+    reactions.push({
+      delegateType: 'Risk-averse delegates',
+      expectedVote: 'ABSTAIN',
+      reasoning: `Some risk factors present; will wait for proposer clarifications before supporting`
+    });
+  } else {
+    reactions.push({
+      delegateType: 'Risk-averse delegates',
+      expectedVote: recommendation === 'NO' ? 'NO' : 'ABSTAIN',
+      reasoning: 'Conservative stance; prefer waiting for community consensus'
+    });
+  }
+  
+  // Growth-focused delegates
+  const hasGrowthBenefits = risks.some(r => r.text.toLowerCase().includes('expansion') || r.text.toLowerCase().includes('deploy'));
+  if (treasuryAmount && missingFields <= 2) {
+    reactions.push({
+      delegateType: 'Growth-focused delegates',
+      expectedVote: missingFields === 0 ? 'YES' : 'ABSTAIN',
+      reasoning: missingFields === 0 
+        ? 'Investment in ecosystem growth with proper safeguards'
+        : 'Willing to support if safeguards added (escrow, verification)'
+    });
+  } else {
+    reactions.push({
+      delegateType: 'Growth-focused delegates',
+      expectedVote: 'ABSTAIN',
+      reasoning: 'Need clearer growth metrics and risk mitigation before supporting'
+    });
+  }
+  
+  // Security-focused delegates
+  const hasAudit = checklist.hasAudit;
+  const hasEscrow = checklist.hasEscrow;
+  if (!hasAudit && treasuryAmount) {
+    reactions.push({
+      delegateType: 'Security-focused delegates',
+      expectedVote: 'NO',
+      reasoning: 'Treasury allocation without security audit is unacceptable; audits must be provided'
+    });
+  } else if (!hasEscrow && treasuryAmount) {
+    reactions.push({
+      delegateType: 'Security-focused delegates',
+      expectedVote: 'NO',
+      reasoning: 'Missing escrow/timelock mechanism for fund protection'
+    });
+  } else if (highRisks >= 1) {
+    reactions.push({
+      delegateType: 'Security-focused delegates',
+      expectedVote: 'ABSTAIN',
+      reasoning: 'Need additional risk mitigation measures before approval'
+    });
+  } else {
+    reactions.push({
+      delegateType: 'Security-focused delegates',
+      expectedVote: recommendation === 'NO' ? 'NO' : 'YES',
+      reasoning: 'Security safeguards appear adequate'
+    });
+  }
+  
+  return reactions;
+}
+
+/**
+ * Calculate probability of proposal passing
+ */
+function calculateProbabilityOfPassing(
+  recommendation: 'YES' | 'NO' | 'ABSTAIN',
+  passedSimilar: number,
+  failedSimilar: number,
+  treasuryAmount: string | null,
+  delegateReactions: DelegateReaction[],
+  missingFields: number
+): number {
+  let probability = 50; // Base 50%
+  
+  // Factor 1: Historical success rate (30% weight)
+  if (passedSimilar + failedSimilar > 0) {
+    const historicalRate = passedSimilar / (passedSimilar + failedSimilar);
+    probability += (historicalRate - 0.5) * 30;
+  }
+  
+  // Factor 2: Budget size (-20% weight for large budgets)
+  if (treasuryAmount) {
+    const amountNum = parseFloat(treasuryAmount.replace(/[^0-9.]/g, ''));
+    if (amountNum > 500) probability -= 15; // Very large budget
+    else if (amountNum > 100) probability -= 10; // Large budget
+    else if (amountNum < 50) probability += 5; // Small budget
+  }
+  
+  // Factor 3: Delegate alignment (25% weight)
+  const yesVotes = delegateReactions.filter(d => d.expectedVote === 'YES').length;
+  const noVotes = delegateReactions.filter(d => d.expectedVote === 'NO').length;
+  const delegateScore = ((yesVotes - noVotes) / delegateReactions.length) * 25;
+  probability += delegateScore;
+  
+  // Factor 4: Governance completeness (15% weight)
+  const governanceScore = ((6 - missingFields) / 6) * 15;
+  probability += governanceScore;
+  
+  // Factor 5: AI recommendation (10% weight)
+  if (recommendation === 'YES') probability += 10;
+  else if (recommendation === 'NO') probability -= 10;
+  
+  return Math.round(Math.max(15, Math.min(95, probability)));
+}
+
+/**
+ * Analyze proposal using Local RAG (free, no API costs)
+ */
 export async function callLLMForProposalAnalysis(
   daoId: string,
   proposalId: string,
   proposalText: string
 ): Promise<ProposalAnalysis> {
   
-  await new Promise(resolve => setTimeout(resolve, 500));
+  console.log(`[LLM] Analyzing proposal ${proposalId} for ${daoId}`);
+  
+  const ragAvailable = await isLocalRAGAvailable();
+  
+  if (!ragAvailable) {
+    console.warn(`[LLM] Local RAG server not available. Using basic analysis.`);
+    return fallbackAnalysis(daoId, proposalId, proposalText);
+  }
 
+  try {
+    console.log('[LLM] Searching local RAG for similar proposals...');
+    const similar = await searchLocal(daoId, proposalText, 5);
+    console.log(`[LLM] Found ${similar.length} similar documents`);
+
+    console.log('[LLM] Generating extractive summary...');
+    const summary = await summarizeLocal(proposalText);
+
+    const analysis = analyzeWithLocalRAG(proposalText, similar, summary);
+    
+    console.log('[LLM] ✅ Local RAG analysis complete');
+    return analysis;
+
+  } catch (error) {
+    console.error('[LLM] Error during Local RAG analysis:', error);
+    console.log('[LLM] Falling back to basic analysis');
+    return fallbackAnalysis(daoId, proposalId, proposalText);
+  }
+}
+
+function analyzeWithLocalRAG(
+  proposalText: string,
+  similarDocs: any[],
+  summary: string
+): ProposalAnalysis {
   const textLower = proposalText.toLowerCase();
   
-  const risks: string[] = [];
-  if (textLower.includes("treasury") || textLower.includes("fund")) {
-    risks.push("Financial risk: Involves treasury/funding allocation");
+  const checklist = runGovernanceChecklist(proposalText);
+  const missingFields: string[] = [];
+  
+  if (!checklist.hasEscrow) missingFields.push('Escrow/timelock mechanism');
+  if (!checklist.hasVerification) missingFields.push('On-chain verification process');
+  if (!checklist.hasKPITiming) missingFields.push('KPI measurement timeline');
+  if (!checklist.hasAudit && textLower.includes('contract')) missingFields.push('Security audit');
+  
+  const requiredClarifications = generateClarifications(checklist);
+  
+  const benefits: EvidencedPoint[] = [];
+  if (textLower.includes("measurable") || textLower.includes("kpi") || textLower.includes("metric")) {
+    benefits.push({
+      text: "Measurable goals: Includes specific success metrics",
+      evidence: extractEvidence(proposalText, ["KPI", "metric", "measurable", "goal"])
+    });
   }
-  if (textLower.includes("governance") || textLower.includes("voting")) {
-    risks.push("Governance risk: Changes to voting mechanisms or governance structure");
+  if (textLower.includes("performance-based") || textLower.includes("conditional")) {
+    benefits.push({
+      text: "Performance-based: Payments tied to results",
+      evidence: extractEvidence(proposalText, ["performance", "conditional", "milestone"])
+    });
   }
-  if (textLower.includes("upgrade") || textLower.includes("contract")) {
-    risks.push("Technical risk: Smart contract changes or upgrades");
-  }
-  if (risks.length === 0) {
-    risks.push("Low risk: No major concerns identified");
-  }
-
-  const benefits: string[] = [];
   if (textLower.includes("improve") || textLower.includes("enhance")) {
-    benefits.push("Enhancement: Aims to improve existing systems");
+    benefits.push({
+      text: "Enhancement: Aims to improve existing systems",
+      evidence: extractEvidence(proposalText, ["improve", "enhance", "better"])
+    });
   }
   if (textLower.includes("community") || textLower.includes("user")) {
-    benefits.push("Community benefit: Focuses on user/community value");
+    benefits.push({
+      text: "Community benefit: Focuses on user/community value",
+      evidence: extractEvidence(proposalText, ["community", "user", "ecosystem"])
+    });
   }
-  if (textLower.includes("efficiency") || textLower.includes("optimize")) {
-    benefits.push("Efficiency: Optimizes processes or reduces costs");
+  if (textLower.includes("deploy") || textLower.includes("expand")) {
+    benefits.push({
+      text: "Expansion: Grows protocol presence and reach",
+      evidence: extractEvidence(proposalText, ["deploy", "expand", "growth"])
+    });
   }
   if (benefits.length === 0) {
-    benefits.push("General improvement: Contributes to DAO operations");
+    benefits.push({
+      text: "General improvement: Contributes to DAO operations",
+      evidence: summary.substring(0, 100) + "..."
+    });
   }
 
-  let recommendation: "YES" | "NO" | "ABSTAIN";
-  let confidence: number;
+  const risks: EvidencedPoint[] = [];
+  let treasuryAmount: string | null = null;
+  
+  if (detectRiskPattern(proposalText, 'treasury')) {
+    treasuryAmount = extractTreasuryAmount(proposalText);
+    const amountStr = treasuryAmount ? ` (${treasuryAmount})` : '';
+    risks.push({
+      text: `Treasury exposure: Significant funding requested from DAO treasury${amountStr}`,
+      evidence: extractEvidence(proposalText, RISK_PATTERNS.treasury.keywords),
+      severity: 'High'
+    });
+  }
+  
+  if (!checklist.hasEscrow && checklist.hasBudget) {
+    risks.push({
+      text: "Custody risk: No explicit escrow or timelock mechanism mentioned",
+      evidence: "Missing governance safeguard: escrow/timelock not specified in proposal",
+      severity: 'High'
+    });
+  }
+  
+  if (!checklist.hasVerification && (textLower.includes("kpi") || textLower.includes("metric"))) {
+    risks.push({
+      text: "Verification risk: Unclear measurement and verification process for KPIs",
+      evidence: extractEvidence(proposalText, RISK_PATTERNS.verification.keywords),
+      severity: 'Medium'
+    });
+  }
+  
+  if (detectRiskPattern(proposalText, 'counterparty')) {
+    risks.push({
+      text: "Counterparty risk: Dependence on external partners or protocols",
+      evidence: extractEvidence(proposalText, RISK_PATTERNS.counterparty.keywords),
+      severity: 'Medium'
+    });
+  }
+  
+  if (detectRiskPattern(proposalText, 'technical')) {
+    risks.push({
+      text: "Technical risk: Smart contract changes or upgrades required",
+      evidence: extractEvidence(proposalText, RISK_PATTERNS.technical.keywords),
+      severity: 'Medium'
+    });
+  }
+  
+  if (textLower.includes("bridge") || textLower.includes("cross-chain")) {
+    risks.push({
+      text: "Bridge risk: Cross-chain security considerations",
+      evidence: extractEvidence(proposalText, ["bridge", "cross-chain", "multi-chain"]),
+      severity: 'Medium'
+    });
+  }
+  
+  if (textLower.includes("incentive") || textLower.includes("reward")) {
+    risks.push({
+      text: "Gaming risk: Incentive structure may be gameable without proper safeguards",
+      evidence: extractEvidence(proposalText, ["incentive", "reward", "distribute"]),
+      severity: 'Low'
+    });
+  }
+  
+  if (detectRiskPattern(proposalText, 'operational') && risks.length < 3) {
+    risks.push({
+      text: "Operational risk: Requires ongoing management and coordination",
+      evidence: extractEvidence(proposalText, RISK_PATTERNS.operational.keywords),
+      severity: 'Low'
+    });
+  }
+  
+  if (risks.length === 0) {
+    risks.push({
+      text: "Low risk: No major concerns identified",
+      evidence: "Standard proposal structure without unusual risk factors",
+      severity: 'Low'
+    });
+  }
+
+  const similarProposals: string[] = [];
+  for (const doc of similarDocs.slice(0, 3)) {
+    const outcomeStr = doc.outcome ? ` (${doc.outcome.toUpperCase()})` : '';
+    const scorePercent = (doc.score * 100).toFixed(0);
+    similarProposals.push(`${doc.title}${outcomeStr} - ${scorePercent}% similar`);
+  }
+  
+  if (similarProposals.length === 0) {
+    similarProposals.push("No directly similar past proposals found");
+  }
+
+  const avgScore = similarDocs.length > 0
+    ? similarDocs.reduce((sum, doc) => sum + doc.score, 0) / similarDocs.length
+    : 0;
+
+  const passedSimilar = similarDocs.filter(doc =>
+    doc.outcome === 'passed' && doc.score > 0.6
+  ).length;
+
+  const failedSimilar = similarDocs.filter(doc =>
+    doc.outcome === 'failed' && doc.score > 0.6
+  ).length;
+
+  const { recommendation, conditionalPath } = determineRecommendation(
+    checklist,
+    risks,
+    benefits,
+    passedSimilar,
+    failedSimilar
+  );
+
+  let baseConfidence: number;
   let reasoning: string;
-
-  if (risks.length > 3) {
-    recommendation = "NO";
-    confidence = 75;
-    reasoning = "High risk factors detected. Recommend voting NO due to significant concerns that need addressing.";
-  } else if (benefits.length >= 2 && risks.length <= 2) {
-    recommendation = "YES";
-    confidence = 80;
-    reasoning = "Clear benefits with manageable risks. Proposal aligns well with DAO objectives.";
+  
+  const highRisks = risks.filter(r => r.severity === 'High');
+  
+  if (recommendation === 'NO') {
+    baseConfidence = 40;
+    reasoning = `Critical issues prevent approval: ${highRisks.length} High-severity risks, ${missingFields.length} missing governance fields. ${failedSimilar > 0 ? `Similar to ${failedSimilar} failed proposal(s).` : 'Substantial revisions needed.'} ${conditionalPath}`;
+  } else if (recommendation === 'ABSTAIN') {
+    baseConfidence = 55;
+    reasoning = `Governance safeguards missing: ${missingFields.join(', ')}. ${passedSimilar > 0 ? `Aligns with ${passedSimilar} similar passed proposal(s)` : 'Some merit'}, but requires clarifications before proceeding. ${conditionalPath}`;
   } else {
-    recommendation = "ABSTAIN";
-    confidence = 60;
-    reasoning = "Mixed signals. More community discussion needed before taking a clear stance.";
+    baseConfidence = 75;
+    reasoning = `Strong approval: ${benefits.length} benefits vs ${risks.length} risks (${highRisks.length} High-severity). ${passedSimilar > 0 ? `Precedent from ${passedSimilar} similar passed proposals.` : 'Sound governance structure.'} ${conditionalPath}`;
   }
 
-  const summary = `This proposal for ${daoId} (ID: ${proposalId}) presents ${benefits.length} key benefit(s) and ${risks.length} risk factor(s). ${reasoning}`;
+  const confidenceResult = calculateConfidence(checklist, avgScore, baseConfidence);
+  
+  const reasoningChain = buildReasoningChain(
+    checklist,
+    risks,
+    benefits,
+    treasuryAmount,
+    passedSimilar + failedSimilar
+  );
 
-  const similarProposals = [
-    "Similar proposal from 3 months ago had 65% support",
-    "Related governance change was approved with 72% votes",
-    "Comparable treasury allocation passed with community consensus"
-  ];
+  // New features for demo
+  const budgetJustification = extractBudgetJustification(proposalText, treasuryAmount);
+  const delegateReactions = generateDelegateReactions(recommendation, risks, checklist, treasuryAmount);
+  const probabilityOfPassing = calculateProbabilityOfPassing(
+    recommendation,
+    passedSimilar,
+    failedSimilar,
+    treasuryAmount,
+    delegateReactions,
+    missingFields.length
+  );
 
   return {
     summary,
@@ -71,8 +714,153 @@ export async function callLLMForProposalAnalysis(
     risks,
     similarProposals,
     recommendation,
-    confidence,
-    reasoning
+    confidence: confidenceResult.score,
+    reasoning,
+    missingFields: missingFields.length > 0 ? missingFields : undefined,
+    requiredClarifications: requiredClarifications.length > 0 ? requiredClarifications : undefined,
+    confidenceBreakdown: confidenceResult.breakdown,
+    reasoningChain,
+    conditionalPath,
+    budgetJustification,
+    delegateReactions,
+    probabilityOfPassing
+  };
+}
+
+function fallbackAnalysis(daoId: string, proposalId: string, proposalText: string): ProposalAnalysis {
+  const textLower = proposalText.toLowerCase();
+  
+  const checklist = runGovernanceChecklist(proposalText);
+  const missingFields: string[] = [];
+  
+  if (!checklist.hasEscrow) missingFields.push('Escrow/timelock mechanism');
+  if (!checklist.hasVerification) missingFields.push('On-chain verification process');
+  if (!checklist.hasKPITiming) missingFields.push('KPI measurement timeline');
+  if (!checklist.hasAudit && textLower.includes('contract')) missingFields.push('Security audit');
+  
+  const requiredClarifications = generateClarifications(checklist);
+  
+  const risks: EvidencedPoint[] = [];
+  let treasuryAmount: string | null = null;
+  
+  if (detectRiskPattern(proposalText, 'treasury')) {
+    treasuryAmount = extractTreasuryAmount(proposalText);
+    risks.push({
+      text: "Treasury exposure: Involves treasury/funding allocation",
+      evidence: extractEvidence(proposalText, RISK_PATTERNS.treasury.keywords),
+      severity: 'High'
+    });
+  }
+  if (!checklist.hasEscrow && checklist.hasBudget) {
+    risks.push({
+      text: "Custody risk: No explicit escrow or timelock mechanism",
+      evidence: "Missing governance safeguard: escrow/timelock not specified",
+      severity: 'High'
+    });
+  }
+  if (textLower.includes("governance") || textLower.includes("voting")) {
+    risks.push({
+      text: "Governance risk: Changes to voting mechanisms or governance structure",
+      evidence: extractEvidence(proposalText, ["governance", "voting", "power"]),
+      severity: 'Medium'
+    });
+  }
+  if (detectRiskPattern(proposalText, 'technical')) {
+    risks.push({
+      text: "Technical risk: Smart contract changes or upgrades",
+      evidence: extractEvidence(proposalText, RISK_PATTERNS.technical.keywords),
+      severity: 'Medium'
+    });
+  }
+  if (risks.length === 0) {
+    risks.push({
+      text: "Low risk: No major concerns identified",
+      evidence: "Standard proposal structure without unusual risk factors",
+      severity: 'Low'
+    });
+  }
+
+  const benefits: EvidencedPoint[] = [];
+  if (textLower.includes("improve") || textLower.includes("enhance")) {
+    benefits.push({
+      text: "Enhancement: Aims to improve existing systems",
+      evidence: extractEvidence(proposalText, ["improve", "enhance", "better"])
+    });
+  }
+  if (textLower.includes("community") || textLower.includes("user")) {
+    benefits.push({
+      text: "Community benefit: Focuses on user/community value",
+      evidence: extractEvidence(proposalText, ["community", "user", "ecosystem"])
+    });
+  }
+  if (textLower.includes("efficiency") || textLower.includes("optimize")) {
+    benefits.push({
+      text: "Efficiency: Optimizes processes or reduces costs",
+      evidence: extractEvidence(proposalText, ["efficiency", "optimize", "reduce"])
+    });
+  }
+  if (textLower.includes("measurable") || textLower.includes("kpi")) {
+    benefits.push({
+      text: "Measurable goals: Includes specific success metrics",
+      evidence: extractEvidence(proposalText, ["KPI", "metric", "measurable"])
+    });
+  }
+  if (benefits.length === 0) {
+    benefits.push({
+      text: "General improvement: Contributes to DAO operations",
+      evidence: proposalText.substring(0, 100) + "..."
+    });
+  }
+
+  const { recommendation, conditionalPath } = determineRecommendation(
+    checklist,
+    risks,
+    benefits,
+    0,
+    0
+  );
+
+  let baseConfidence: number = 45;
+  let reasoning: string = `Limited historical context without RAG. ${conditionalPath}`;
+
+  const confidenceResult = calculateConfidence(checklist, 0, baseConfidence);
+  
+  const reasoningChain = buildReasoningChain(
+    checklist,
+    risks,
+    benefits,
+    treasuryAmount,
+    0
+  );
+
+  // New features for demo
+  const budgetJustification = extractBudgetJustification(proposalText, treasuryAmount);
+  const delegateReactions = generateDelegateReactions(recommendation, risks, checklist, treasuryAmount);
+  const probabilityOfPassing = calculateProbabilityOfPassing(
+    recommendation,
+    0,
+    0,
+    treasuryAmount,
+    delegateReactions,
+    missingFields.length
+  );
+
+  return {
+    summary: `Basic analysis for ${daoId} proposal ${proposalId}. ${benefits.length} potential benefit(s) and ${risks.length} risk factor(s) identified. Governance checklist: ${6 - missingFields.length}/6 fields present.`,
+    benefits,
+    risks,
+    similarProposals: ["Full governance history not loaded. Enable RAG for similar proposal analysis."],
+    recommendation,
+    confidence: confidenceResult.score,
+    reasoning,
+    missingFields: missingFields.length > 0 ? missingFields : undefined,
+    requiredClarifications: requiredClarifications.length > 0 ? requiredClarifications : undefined,
+    confidenceBreakdown: confidenceResult.breakdown,
+    reasoningChain,
+    conditionalPath,
+    budgetJustification,
+    delegateReactions,
+    probabilityOfPassing
   };
 }
 
