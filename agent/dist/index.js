@@ -4,12 +4,33 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const child_process_1 = require("child_process");
 const analyzeProposal_1 = require("./routes/analyzeProposal");
 const health_1 = require("./routes/health");
 const dotenv_1 = require("dotenv");
 const x402_express_1 = require("x402-express");
 const cors_1 = __importDefault(require("cors"));
 (0, dotenv_1.config)();
+if (process.env.ENABLE_LOCAL_RAG === "true") {
+    console.log("🔍 Starting Local RAG server...");
+    const rag = (0, child_process_1.spawn)("python3", ["local_rag_server.py"], {
+        cwd: process.cwd(),
+        stdio: "inherit",
+    });
+    rag.on("error", (err) => {
+        console.error("❌ Failed to start Local RAG:", err);
+    });
+    rag.on("exit", (code) => {
+        if (code !== 0) {
+            console.error(`❌ Local RAG exited with code ${code}`);
+        }
+    });
+    process.on("SIGINT", () => {
+        console.log("🛑 Shutting down Local RAG...");
+        rag.kill();
+        process.exit();
+    });
+}
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({
     origin: "*",

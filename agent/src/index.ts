@@ -1,4 +1,5 @@
 import express from "express";
+import { spawn } from "child_process";
 import { analyzeProposalRouter } from "./routes/analyzeProposal";
 import { healthRouter } from "./routes/health";
 import { config } from "dotenv";
@@ -6,6 +7,31 @@ import { paymentMiddleware } from "x402-express";
 import cors from "cors";
 
 config();
+
+if (process.env.ENABLE_LOCAL_RAG === "true") {
+  console.log("🔍 Starting Local RAG server...");
+
+  const rag = spawn("python3", ["local_rag_server.py"], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+  });
+
+  rag.on("error", (err) => {
+    console.error("Failed to start Local RAG:", err);
+  });
+
+  rag.on("exit", (code) => {
+    if (code !== 0) {
+      console.error(`Local RAG exited with code ${code}`);
+    }
+  });
+
+  process.on("SIGINT", () => {
+    console.log("Shutting down Local RAG...");
+    rag.kill();
+    process.exit();
+  });
+}
 
 const app = express();
 
