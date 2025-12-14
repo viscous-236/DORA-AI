@@ -188,7 +188,6 @@ const observer = new MutationObserver(() => {
     lastUrl = currentUrl;
     console.log("[DAO Co-Pilot] URL changed, attempting to inject panel...");
     
-    // Wait a bit for the page to render
     setTimeout(injectPanel, 1000);
   }
 });

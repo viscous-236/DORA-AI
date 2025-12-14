@@ -2,9 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.callLLMForProposalAnalysis = callLLMForProposalAnalysis;
 const local_client_1 = require("../rag/local-client");
-/**
- * UPGRADE 1: Advanced pattern detection for risk classification
- */
 const RISK_PATTERNS = {
     treasury: {
         keywords: ['budget', 'million', 'incentive', 'unlock', 'funding', 'treasury', 'disburse', 'grant', 'allocate', 'payment'],
@@ -37,9 +34,6 @@ const RISK_PATTERNS = {
         severity: 'Low'
     }
 };
-/**
- * Extract amount from treasury-related text
- */
 function extractTreasuryAmount(text) {
     const match = text.match(/\$\s*(\d+\.?\d*)\s*([MmKk]|million|thousand)/);
     if (match) {
@@ -47,9 +41,6 @@ function extractTreasuryAmount(text) {
     }
     return null;
 }
-/**
- * Detect risk patterns with improved accuracy
- */
 function detectRiskPattern(proposalText, patternType) {
     const pattern = RISK_PATTERNS[patternType];
     const textLower = proposalText.toLowerCase();
@@ -58,15 +49,9 @@ function detectRiskPattern(proposalText, patternType) {
     }
     return pattern.keywords.some(keyword => textLower.includes(keyword.toLowerCase()));
 }
-/**
- * Get severity for a risk type
- */
 function getRiskSeverity(riskType) {
     return RISK_PATTERNS[riskType].severity;
 }
-/**
- * Extract evidence sentences from proposal text for a given keyword/pattern
- */
 function extractEvidence(proposalText, keywords) {
     const sentences = proposalText.split(/[.!?]\s+/);
     for (const sentence of sentences) {
@@ -77,9 +62,6 @@ function extractEvidence(proposalText, keywords) {
     }
     return proposalText.substring(0, 100) + '...';
 }
-/**
- * Run governance checklist on proposal text
- */
 function runGovernanceChecklist(proposalText) {
     const textLower = proposalText.toLowerCase();
     return {
@@ -91,9 +73,6 @@ function runGovernanceChecklist(proposalText) {
         hasTimeline: textLower.includes('timeline') || textLower.includes('schedule') || textLower.includes('phases')
     };
 }
-/**
- * Generate clarifying questions based on missing checklist items
- */
 function generateClarifications(checklist) {
     const clarifications = [];
     if (!checklist.hasEscrow) {
@@ -113,9 +92,6 @@ function generateClarifications(checklist) {
     }
     return clarifications;
 }
-/**
- * Calculate composite confidence score
- */
 function calculateConfidence(checklist, avgSimilarity, baseConfidence) {
     const checklistValues = Object.values(checklist);
     const rulesCoverage = checklistValues.filter(v => v).length / checklistValues.length;
@@ -132,9 +108,6 @@ function calculateConfidence(checklist, avgSimilarity, baseConfidence) {
         }
     };
 }
-/**
- * UPGRADE 3: Build transparent reasoning chain
- */
 function buildReasoningChain(checklist, risks, benefits, treasuryAmount, similarCount) {
     const chain = [];
     let stepNum = 1;
@@ -184,9 +157,6 @@ function buildReasoningChain(checklist, risks, benefits, treasuryAmount, similar
     }
     return chain;
 }
-/**
- * UPGRADE 5: Formalized conditional logic for recommendations
- */
 function determineRecommendation(checklist, risks, benefits, passedSimilar, failedSimilar) {
     const missingCritical = !checklist.hasEscrow || !checklist.hasVerification;
     const highRisks = risks.filter(r => r.severity === 'High').length;
@@ -220,20 +190,15 @@ function determineRecommendation(checklist, risks, benefits, passedSimilar, fail
         conditionalPath: 'Would change to YES if: proposer clarifies missing fields and addresses top 2 risks'
     };
 }
-/**
- * Extract budget breakdown from proposal text
- */
 function extractBudgetJustification(proposalText, treasuryAmount) {
     if (!treasuryAmount)
         return undefined;
     const breakdown = [];
     const flags = [];
     const lines = proposalText.split('\n');
-    // Common budget patterns
     const budgetKeywords = ['backend', 'frontend', 'infrastructure', 'ops', 'maintenance', 'development', 'design', 'audit', 'security', 'marketing', 'operations'];
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i].toLowerCase();
-        // Look for budget line items
         const amountMatch = line.match(/[\$€£]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*([kmb]|thousand|million|billion)?/i);
         if (amountMatch) {
             const keyword = budgetKeywords.find(kw => line.includes(kw));
@@ -247,7 +212,6 @@ function extractBudgetJustification(proposalText, treasuryAmount) {
             }
         }
     }
-    // Check for benchmarking
     const hasBenchmark = proposalText.toLowerCase().includes('similar') &&
         proposalText.toLowerCase().includes('grant') ||
         proposalText.toLowerCase().includes('benchmark') ||
@@ -255,7 +219,6 @@ function extractBudgetJustification(proposalText, treasuryAmount) {
     if (!hasBenchmark) {
         flags.push('No benchmark against similar infra grants');
     }
-    // If no breakdown found, create a generic one
     if (breakdown.length === 0) {
         breakdown.push({
             category: 'Total requested',
@@ -268,14 +231,10 @@ function extractBudgetJustification(proposalText, treasuryAmount) {
         flags
     };
 }
-/**
- * Generate delegate reaction predictions
- */
 function generateDelegateReactions(recommendation, risks, checklist, treasuryAmount) {
     const reactions = [];
     const highRisks = risks.filter(r => r.severity === 'High').length;
     const missingFields = Object.values(checklist).filter(v => !v).length;
-    // Risk-averse delegates
     if (highRisks >= 2 || missingFields >= 3) {
         reactions.push({
             delegateType: 'Risk-averse delegates',
@@ -297,7 +256,6 @@ function generateDelegateReactions(recommendation, risks, checklist, treasuryAmo
             reasoning: 'Conservative stance; prefer waiting for community consensus'
         });
     }
-    // Growth-focused delegates
     const hasGrowthBenefits = risks.some(r => r.text.toLowerCase().includes('expansion') || r.text.toLowerCase().includes('deploy'));
     if (treasuryAmount && missingFields <= 2) {
         reactions.push({
@@ -315,7 +273,6 @@ function generateDelegateReactions(recommendation, risks, checklist, treasuryAmo
             reasoning: 'Need clearer growth metrics and risk mitigation before supporting'
         });
     }
-    // Security-focused delegates
     const hasAudit = checklist.hasAudit;
     const hasEscrow = checklist.hasEscrow;
     if (!hasAudit && treasuryAmount) {
@@ -348,56 +305,41 @@ function generateDelegateReactions(recommendation, risks, checklist, treasuryAmo
     }
     return reactions;
 }
-/**
- * Calculate probability of proposal passing
- */
 function calculateProbabilityOfPassing(recommendation, passedSimilar, failedSimilar, treasuryAmount, delegateReactions, missingFields) {
-    let probability = 50; // Base 50%
-    // Factor 1: Historical success rate (30% weight)
+    let probability = 50;
     if (passedSimilar + failedSimilar > 0) {
         const historicalRate = passedSimilar / (passedSimilar + failedSimilar);
         probability += (historicalRate - 0.5) * 30;
     }
-    // Factor 2: Budget size (-20% weight for large budgets)
     if (treasuryAmount) {
         const amountNum = parseFloat(treasuryAmount.replace(/[^0-9.]/g, ''));
         if (amountNum > 500)
-            probability -= 15; // Very large budget
+            probability -= 15;
         else if (amountNum > 100)
-            probability -= 10; // Large budget
+            probability -= 10;
         else if (amountNum < 50)
-            probability += 5; // Small budget
+            probability += 5;
     }
-    // Factor 3: Delegate alignment (25% weight)
     const yesVotes = delegateReactions.filter(d => d.expectedVote === 'YES').length;
     const noVotes = delegateReactions.filter(d => d.expectedVote === 'NO').length;
     const delegateScore = ((yesVotes - noVotes) / delegateReactions.length) * 25;
     probability += delegateScore;
-    // Factor 4: Governance completeness (15% weight)
     const governanceScore = ((6 - missingFields) / 6) * 15;
     probability += governanceScore;
-    // Factor 5: AI recommendation (10% weight)
     if (recommendation === 'YES')
         probability += 10;
     else if (recommendation === 'NO')
         probability -= 10;
     return Math.round(Math.max(15, Math.min(95, probability)));
 }
-/**
- * Analyze proposal using Local RAG (free, no API costs)
- */
 function isValidProposalContent(text, title) {
-    // Check if content is meaningful (not just random characters)
     const cleanText = text.trim().toLowerCase();
     const cleanTitle = title?.trim().toLowerCase() || '';
-    // Must have minimum length
     if (cleanText.length < 50)
         return false;
-    // Check for actual words (at least 5 words of 3+ characters)
     const words = cleanText.split(/\s+/).filter(w => w.length >= 3);
     if (words.length < 5)
         return false;
-    // Check if text contains common proposal keywords
     const proposalKeywords = [
         'propose', 'request', 'allocate', 'fund', 'budget', 'treasury',
         'deploy', 'implement', 'upgrade', 'governance', 'vote', 'approval',
@@ -406,8 +348,7 @@ function isValidProposalContent(text, title) {
         'team', 'project', 'development', 'audit', 'security', 'integration'
     ];
     const hasKeywords = proposalKeywords.some(keyword => cleanText.includes(keyword) || cleanTitle.includes(keyword));
-    // Check for repetitive nonsense patterns
-    const hasRepetitiveChars = /(.)\1{5,}/.test(cleanText); // 6+ repeated chars
+    const hasRepetitiveChars = /(.)\1{5,}/.test(cleanText);
     const isRandomKeyboard = /^[qwertyuiopasdfghjklzxcvbnm\s]+$/.test(cleanText) &&
         !hasKeywords;
     return hasKeywords && !hasRepetitiveChars && !isRandomKeyboard;
@@ -417,7 +358,6 @@ async function callLLMForProposalAnalysis(daoId, proposalId, proposalText, propo
     console.log(`[LLM] Analyzing ${type} ${proposalId} for ${daoId}`);
     if (proposalTitle)
         console.log(`[LLM] Title: ${proposalTitle}`);
-    // Validate proposal content is meaningful
     if (!isValidProposalContent(proposalText, proposalTitle)) {
         console.warn(`[LLM] Invalid or insufficient proposal content detected`);
         return {
@@ -622,7 +562,6 @@ function analyzeWithLocalRAG(proposalText, similarDocs, summary, isDraft = false
     }
     const confidenceResult = calculateConfidence(checklist, avgScore, baseConfidence);
     const reasoningChain = buildReasoningChain(checklist, risks, benefits, treasuryAmount, passedSimilar + failedSimilar);
-    // New features for demo
     const budgetJustification = extractBudgetJustification(proposalText, treasuryAmount);
     const delegateReactions = generateDelegateReactions(recommendation, risks, checklist, treasuryAmount);
     const probabilityOfPassing = calculateProbabilityOfPassing(recommendation, passedSimilar, failedSimilar, treasuryAmount, delegateReactions, missingFields.length);
@@ -731,7 +670,6 @@ function fallbackAnalysis(daoId, proposalId, proposalText, isDraft = false) {
     let reasoning = `Limited historical context without RAG. ${conditionalPath}`;
     const confidenceResult = calculateConfidence(checklist, 0, baseConfidence);
     const reasoningChain = buildReasoningChain(checklist, risks, benefits, treasuryAmount, 0);
-    // New features for demo
     const budgetJustification = extractBudgetJustification(proposalText, treasuryAmount);
     const delegateReactions = generateDelegateReactions(recommendation, risks, checklist, treasuryAmount);
     const probabilityOfPassing = calculateProbabilityOfPassing(recommendation, 0, 0, treasuryAmount, delegateReactions, missingFields.length);

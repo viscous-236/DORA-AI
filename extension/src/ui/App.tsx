@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import "./App.css";
-import { wrapFetchWithPayment, createSigner } from 'x402-fetch';
+import { wrapFetchWithPayment } from 'x402-fetch';
 import { createWalletClient, custom, type WalletClient } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import type { Account } from 'viem';
@@ -499,7 +499,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
         <div className="dao-copilot-content">
           <p className="dao-copilot-description">
             {isDraft 
-              ? `📝 Get AI-powered analysis for your draft ${daoId.toUpperCase()} proposal`
+              ? `Get AI-powered analysis for your draft ${daoId.toUpperCase()} proposal`
               : `Get AI-powered analysis for this ${daoId.toUpperCase()} proposal`
             }
           </p>
@@ -533,7 +533,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                 fontSize: '12px',
                 marginBottom: '12px',
               }}>
-                ✅ Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
               </div>
               {!analysis && !isLoading && (
                 <button
@@ -541,7 +541,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                   onClick={handleAnalyze}
                   disabled={isLoading}
                 >
-                  {isDraft ? '📝 Analyze My Draft' : '🔍 Ask AI About This Proposal'}
+                  {isDraft ? 'Analyze My Draft' : 'Ask AI About This Proposal'}
                 </button>
               )}
             </>
@@ -556,7 +556,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
 
           {error && (
             <div className="dao-copilot-error">
-              <p>⚠️ {error}</p>
+              <p>{error}</p>
               <button className="dao-copilot-retry-btn" onClick={handleAnalyze}>
                 Try Again
               </button>
@@ -585,12 +585,12 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
               </div>
 
               <div className="dao-copilot-section">
-                <h4>📋 Summary</h4>
+                <h4>Summary</h4>
                 <p>{analysis.summary}</p>
               </div>
 
               <div className="dao-copilot-section">
-                <h4>✅ Benefits</h4>
+                <h4>Benefits</h4>
                 <ul>
                   {analysis.benefits.map((benefit, idx) => (
                     <li key={idx}>
@@ -598,7 +598,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                         <strong>{benefit.text}</strong>
                       </div>
                       <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', marginLeft: '12px' }}>
-                        📝 "{benefit.evidence}"
+                        "{benefit.evidence}"
                       </div>
                     </li>
                   ))}
@@ -607,7 +607,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
 
               {analysis.missingFields && analysis.missingFields.length > 0 && (
                 <div className="dao-copilot-section" style={{ background: '#fee2e2', borderLeft: '4px solid #ef4444', padding: '12px' }}>
-                  <h4 style={{ color: '#991b1b', margin: '0 0 8px 0' }}>🔴 Missing Governance Fields</h4>
+                  <h4 style={{ color: '#991b1b', margin: '0 0 8px 0' }}>Missing Governance Fields</h4>
                   <ul style={{ margin: 0, paddingLeft: '20px' }}>
                     {analysis.missingFields.map((field, idx) => (
                       <li key={idx} style={{ color: '#991b1b', fontSize: '13px' }}>{field}</li>
@@ -617,7 +617,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
               )}
 
               <div className="dao-copilot-section">
-                <h4>⚠️ Risks</h4>
+                <h4>Risks</h4>
                 <ul>
                   {analysis.risks.map((risk, idx) => {
                     const severityColor = 
@@ -647,7 +647,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                           <strong>{risk.text}</strong>
                         </div>
                         <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic', marginLeft: '12px' }}>
-                          📝 "{risk.evidence}"
+                          "{risk.evidence}"
                         </div>
                       </li>
                     );
@@ -670,7 +670,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                 <div className="dao-copilot-section">
                   <details>
                     <summary style={{ cursor: 'pointer', fontWeight: 'bold', marginBottom: '8px' }}>
-                      🧠 Reasoning Chain ({analysis.reasoningChain.length} steps)
+                      Reasoning Chain ({analysis.reasoningChain.length} steps)
                     </summary>
                     <ol style={{ paddingLeft: '20px' }}>
                       {analysis.reasoningChain.map((step) => {
@@ -678,9 +678,6 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                           step.impact === 'positive' ? '#10b981' :
                           step.impact === 'negative' ? '#ef4444' :
                           '#6b7280';
-                        const icon = 
-                          step.impact === 'positive' ? '✅' :
-                          step.impact === 'negative' ? '⚠️' : 'ℹ️';
                         return (
                           <li key={step.step} style={{
                             marginBottom: '8px',
@@ -690,7 +687,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                           }}>
                             <strong style={{ textTransform: 'uppercase', fontSize: '11px', color: '#6b7280' }}>
                               [{step.category}]
-                            </strong> {icon} {step.finding}
+                            </strong> {step.finding}
                           </li>
                         );
                       })}
@@ -701,14 +698,14 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
 
               {analysis.conditionalPath && (
                 <div className="dao-copilot-section" style={{ background: '#dbeafe', borderLeft: '4px solid #3b82f6' }}>
-                  <h4 style={{ color: '#1e40af', margin: '0 0 8px 0' }}>🔄 Conditional Path</h4>
+                  <h4 style={{ color: '#1e40af', margin: '0 0 8px 0' }}>Conditional Path</h4>
                   <p style={{ color: '#1e40af', fontSize: '13px', margin: 0 }}>{analysis.conditionalPath}</p>
                 </div>
               )}
 
               {analysis.budgetJustification && (
                 <div className="dao-copilot-section" style={{ background: '#fef3c7', borderLeft: '4px solid #f59e0b' }}>
-                  <h4 style={{ color: '#92400e', margin: '0 0 8px 0' }}>💰 Budget Justification</h4>
+                  <h4 style={{ color: '#92400e', margin: '0 0 8px 0' }}>Budget Justification</h4>
                   <div style={{ marginBottom: '8px' }}>
                     <strong style={{ color: '#92400e' }}>Total: {analysis.budgetJustification.totalAmount}</strong>
                   </div>
@@ -725,7 +722,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                     <div style={{ marginTop: '8px', padding: '8px', background: '#fee2e2', borderRadius: '4px' }}>
                       {analysis.budgetJustification.flags.map((flag, idx) => (
                         <div key={idx} style={{ color: '#991b1b', fontSize: '12px', fontWeight: 'bold' }}>
-                          🚩 {flag}
+                          {flag}
                         </div>
                       ))}
                     </div>
@@ -735,7 +732,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
 
               {analysis.delegateReactions && analysis.delegateReactions.length > 0 && (
                 <div className="dao-copilot-section">
-                  <h4>🗳️ Expected Delegate Reactions</h4>
+                  <h4>Expected Delegate Reactions</h4>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {analysis.delegateReactions.map((reaction, idx) => {
                       const voteColor = 
@@ -777,7 +774,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
                   borderLeft: `4px solid ${analysis.probabilityOfPassing >= 60 ? '#10b981' : analysis.probabilityOfPassing >= 40 ? '#f59e0b' : '#ef4444'}`,
                   textAlign: 'center'
                 }}>
-                  <h4 style={{ margin: '0 0 8px 0' }}>📊 Estimated Probability of Passing</h4>
+                  <h4 style={{ margin: '0 0 8px 0' }}>Estimated Probability of Passing</h4>
                   <div style={{ 
                     fontSize: '32px', 
                     fontWeight: 'bold',
@@ -792,7 +789,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
               )}
 
               <div className="dao-copilot-section">
-                <h4>💡 AI Reasoning</h4>
+                <h4>AI Reasoning</h4>
                 <p>{analysis.reasoning}</p>
               </div>
             </div>

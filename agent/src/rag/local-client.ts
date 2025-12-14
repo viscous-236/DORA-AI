@@ -1,8 +1,3 @@
-/**
- * Local RAG Client - TypeScript client for Python RAG server
- * No API costs, runs on localhost:9000
- */
-
 const LOCAL_RAG_URL = process.env.LOCAL_RAG_URL || 'http://127.0.0.1:9000';
 
 export interface LocalSearchResult {
@@ -79,9 +74,8 @@ export async function searchLocal(
   return data.results;
 }
 
-/**
- * Generate extractive summary using TextRank
- */
+
+// Generate extractive summary using TextRank
 export async function summarizeLocal(text: string): Promise<string> {
   const response = await fetch(`${LOCAL_RAG_URL}/summarize`, {
     method: 'POST',
@@ -97,9 +91,8 @@ export async function summarizeLocal(text: string): Promise<string> {
   return data.summary;
 }
 
-/**
- * Add document to vector store
- */
+
+// Add document to vector store
 export async function addDocumentLocal(doc: LocalDocument): Promise<void> {
   const response = await fetch(`${LOCAL_RAG_URL}/add_doc`, {
     method: 'POST',

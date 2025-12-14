@@ -1,16 +1,6 @@
-/**
- * Background service worker for DAO Governance Co-Pilot
- * Handles X402 micropayment events and fetch requests (bypasses ad blockers)
- */
-
-console.log("[DAO Co-Pilot] Background service worker started");
-
-// Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log("[DAO Co-Pilot] Received message:", request.type);
 
   if (request.type === "BACKGROUND_FETCH") {
-    // Handle fetch requests from content script (bypasses ad blockers)
     handleBackgroundFetch(request.data)
       .then(sendResponse)
       .catch((error) => {
@@ -21,7 +11,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
       });
     
-    return true; // Keep message channel open for async response
+    return true; 
   }
 
   if (request.type === "ANALYZE_PROPOSAL") {
@@ -56,8 +46,6 @@ async function handleBackgroundFetch(data: {
   body?: string;
 }) {
   try {
-    console.log(`[DAO Co-Pilot] Background fetching: ${data.method} ${data.url}`);
-    
     const response = await fetch(data.url, {
       method: data.method,
       headers: data.headers,
@@ -93,15 +81,12 @@ async function handleBackgroundFetch(data: {
 }
 
 async function handleProposalAnalysis(data: any) {
-  // This will integrate with X402 micropayment later
   console.log("[DAO Co-Pilot] Analyzing proposal:", data);
   
-  // For now, just pass through to the API
   return { success: true };
 }
 
 async function handleMicropayment(data: any) {
-  // TODO: Integrate with X402 micropayment contract
   console.log("[DAO Co-Pilot] Processing micropayment:", data);
   
   return { success: true, txHash: "0x..." };

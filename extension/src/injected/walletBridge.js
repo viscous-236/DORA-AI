@@ -1,6 +1,4 @@
-// This script runs in the page context and has access to window.ethereum
 (function() {
-  console.log('[Wallet Bridge] Initializing wallet bridge...');
   
   // Listen for requests from content script
   window.addEventListener('message', async (event) => {
@@ -152,5 +150,4 @@
     }
   });
   
-  console.log('[Wallet Bridge] Wallet bridge initialized successfully');
 })();

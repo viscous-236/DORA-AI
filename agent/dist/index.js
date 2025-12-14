@@ -4,7 +4,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const analyzeDraft_1 = require("./routes/analyzeDraft");
 const analyzeProposal_1 = require("./routes/analyzeProposal");
 const health_1 = require("./routes/health");
 const dotenv_1 = require("dotenv");
@@ -43,29 +42,16 @@ app.use((0, cors_1.default)({
 app.options("*", (0, cors_1.default)());
 app.use(express_1.default.json());
 const payTo = process.env.PAY_TO_ADDRESS;
-const enableX402 = process.env.ENABLE_X402 === "true" && !!payTo;
-if (enableX402) {
-    console.log("🔒 X402 Payment Middleware ENABLED");
-    console.log(`💰 Payments to: ${payTo}`);
-    const facilitatorUrl = (process.env.FACILITATOR_URL ||
-        "https://facilitator.x402.org");
-    app.use((0, x402_express_1.paymentMiddleware)(payTo, {
-        "POST /api/analyze-draft": {
-            price: "$0.001",
-            network: "base-sepolia",
-        },
-        "POST /api/analyze-proposal": {
-            price: "$0.001",
-            network: "base-sepolia",
-        },
-    }, {
-        url: facilitatorUrl,
-    }));
-}
-else {
-    console.log("X402 Payment Middleware DISABLED (set ENABLE_X402=true and PAY_TO_ADDRESS to enable)");
-}
-app.use("/api/analyze-draft", analyzeDraft_1.analyzeDraftRouter);
+const facilitatorUrl = (process.env.FACILITATOR_URL ||
+    "https://facilitator.x402.org");
+app.use((0, x402_express_1.paymentMiddleware)(payTo, {
+    "POST /api/analyze-proposal": {
+        price: "$0.001",
+        network: "base-sepolia",
+    },
+}, {
+    url: facilitatorUrl,
+}));
 app.use("/api/analyze-proposal", analyzeProposal_1.analyzeProposalRouter);
 app.use("/api/health", health_1.healthRouter);
 app.use((req, res, next) => {

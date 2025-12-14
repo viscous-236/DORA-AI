@@ -5,7 +5,6 @@ const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 module.exports = {
   entry: {
     "content-script/injectPanel": "./src/content-script/injectPanel.tsx",
-    "injected/pageScript": "./src/injected/pageScript.ts",
     "background/listener": "./src/background/listener.ts",
     "popup/Popup": "./src/popup/Popup.tsx",
   },

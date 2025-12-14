@@ -1,8 +1,4 @@
 "use strict";
-/**
- * Local RAG Client - TypeScript client for Python RAG server
- * No API costs, runs on localhost:9000
- */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isLocalRAGAvailable = isLocalRAGAvailable;
 exports.embedLocal = embedLocal;
@@ -56,9 +52,7 @@ async function searchLocal(daoId, text, topK = 5) {
     const data = await response.json();
     return data.results;
 }
-/**
- * Generate extractive summary using TextRank
- */
+// Generate extractive summary using TextRank
 async function summarizeLocal(text) {
     const response = await fetch(`${LOCAL_RAG_URL}/summarize`, {
         method: 'POST',
@@ -71,9 +65,7 @@ async function summarizeLocal(text) {
     const data = await response.json();
     return data.summary;
 }
-/**
- * Add document to vector store
- */
+// Add document to vector store
 async function addDocumentLocal(doc) {
     const response = await fetch(`${LOCAL_RAG_URL}/add_doc`, {
         method: 'POST',
