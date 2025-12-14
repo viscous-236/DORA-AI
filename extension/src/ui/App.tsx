@@ -314,7 +314,7 @@ const App: React.FC<AppProps> = ({ proposalId, daoId, isDraft = false }) => {
       );
 
       console.log("[DAO Co-Pilot] Making X402-enabled request...");
-      const response = await fetchWithPayment("http://localhost:4000/api/analyze-proposal", {
+      const response = await fetchWithPayment("https://dora-ai-puep.onrender.com/api/analyze-proposal", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

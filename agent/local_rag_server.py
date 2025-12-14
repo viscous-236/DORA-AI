@@ -2,12 +2,12 @@
 """
 Local RAG Server - No API costs, runs on your laptop
 Provides embeddings, search, and summarization
+PRECOMPUTED MODE: No ML models, keyword matching only
 """
 from fastapi import FastAPI
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
+# No sklearn.cosine_similarity - using keyword matching in precomputed mode
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.text_rank import TextRankSummarizer
@@ -17,10 +17,9 @@ import json
 
 app = FastAPI(title="Local RAG for DAO Co-Pilot")
 
-MODEL_NAME = os.environ.get("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-print(f"🔄 Loading embedding model: {MODEL_NAME}")
-model = SentenceTransformer(MODEL_NAME)
-print("✅ Model loaded!")
+MODEL_NAME = "precomputed"
+model = None
+print("🧠 Lite RAG running in PRECOMPUTED mode (Render-safe)")
 
 VECSTORE_PATH = "data/vecstore.json"
 os.makedirs("data", exist_ok=True)
@@ -53,9 +52,8 @@ class SearchQuery(BaseModel):
     topK: int = 5
 
 def embed_text(text: str):
-    """Generate embedding for text"""
-    vec = model.encode([text], show_progress_bar=False)[0]
-    return np.array(vec).astype(float)
+    """Embedding generation disabled - using precomputed embeddings only"""
+    raise RuntimeError("Embedding generation disabled on Render. Use precomputed vecstore.json")
 
 def persist_store():
     """Save vector store to disk"""
@@ -69,48 +67,47 @@ def persist_store():
 
 @app.post("/embed")
 def embed_endpoint(payload: TextIn):
-    """Generate embedding for text"""
-    emb = embed_text(payload.text)
-    return {"embedding": emb.tolist()}
+    """Embedding generation disabled in precomputed mode"""
+    return {"error": "Embedding generation disabled. Using precomputed vectors."}
 
 @app.post("/add_doc")
 def add_doc(payload: DocAdd):
-    """Add document to vector store"""
-    emb = embed_text(payload.text)
-    VECSTORE[payload.id] = {
-        "daoId": payload.daoId,
-        "title": payload.title,
-        "text": payload.text,
-        "outcome": payload.outcome,
-        "type": payload.type,
-        "embedding": emb
-    }
-    persist_store()
-    return {"ok": True, "id": payload.id}
+    """Document addition disabled in precomputed mode"""
+    return {"error": "Document addition disabled. Vecstore is precomputed."}
 
 @app.post("/search")
 def search_endpoint(payload: SearchQuery):
-    """Search for similar documents"""
-    q_emb = embed_text(payload.text)
+    """Search for similar documents using keyword matching (precomputed mode)"""
+    if not payload.text.strip():
+        return {"results": []}
+    
     items = [(k, v) for k, v in VECSTORE.items() if v["daoId"] == payload.daoId]
     
     if not items:
         return {"results": []}
     
-    embs = np.array([v["embedding"] for _, v in items])
-    sims = cosine_similarity([q_emb], embs)[0]
-    ranked_idx = sims.argsort()[::-1][:payload.topK]
+    # Simple keyword matching as fallback
+    query_words = set(payload.text.lower().split())
+    scored_items = []
+    
+    for key, val in items:
+        text_words = set(val["text"].lower().split())
+        overlap = len(query_words & text_words)
+        score = overlap / max(len(query_words), 1)
+        scored_items.append((key, val, score))
+    
+    # Sort by score descending
+    scored_items.sort(key=lambda x: x[2], reverse=True)
     
     results = []
-    for i in ranked_idx:
-        key, val = items[i]
+    for key, val, score in scored_items[:payload.topK]:
         results.append({
             "id": key,
             "title": val.get("title", ""),
             "text": val["text"][:500],
             "outcome": val.get("outcome", ""),
             "type": val.get("type", "proposal"),
-            "score": float(sims[i])
+            "score": float(score)
         })
     
     return {"results": results}
