@@ -10,6 +10,44 @@ A universal Chrome extension that provides delegate-grade analysis of DAO propos
 
 ---
 
+## 🎯 Problem It Solves
+
+DAO governance today is high-stakes but cognitively expensive. Delegates are expected to read long, technical proposals and make funding or protocol decisions under time pressure, often without structured tools to assess risk, precedent, or alignment with DAO norms.
+
+### Key Problems
+
+**Information overload**  
+Governance proposals are lengthy, unstructured, and time-consuming to evaluate during active voting windows.
+
+**Lack of precedent awareness**  
+Delegates rarely have instant access to similar past proposals and their outcomes when voting.
+
+**Inconsistent risk evaluation**  
+Critical governance safeguards (e.g. escrow, timelocks, KPI verification) are often overlooked or evaluated subjectively.
+
+**Low participation quality**  
+Many token holders abstain or vote heuristically due to the complexity of governance decisions.
+
+### How This Project Helps
+
+This project provides a governance-native AI co-pilot that:
+
+✅ **Summarizes proposals in seconds**
+
+✅ **Surfaces relevant historical precedents**
+
+✅ **Flags missing governance safeguards and risks**
+
+✅ **Produces an evidence-backed vote recommendation with confidence**
+
+All without relying on paid APIs or opaque LLM reasoning.
+
+### TL;DR
+
+The project reduces governance friction by turning long, complex DAO proposals into clear, risk-aware, and precedent-informed decisions at the point of voting.
+
+---
+
 ## ✨ Features
 
 ### Delegate-Grade Analysis
