@@ -1,4 +1,4 @@
-# 🗳️ DAO Co-Pilot
+# 🗳️ DORA-AI
 
 **AI-powered governance analysis with X402 micropayments**
 
